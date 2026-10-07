@@ -609,7 +609,41 @@ func (r *runner) getSubstitutedConfigWithContext(
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := mergeOverlayFeatures(ctx, rawConfig, options.ExtraDevContainerPath); err != nil {
+		return nil, nil, err
+	}
 	return r.substitute(options, rawConfig)
+}
+
+func mergeOverlayFeatures(
+	ctx context.Context,
+	rawConfig *config.DevContainerConfig,
+	overlayPath string,
+) error {
+	if overlayPath == "" {
+		return nil
+	}
+	overlay, err := config.ParseDevContainerJSONFile(ctx, overlayPath)
+	if err != nil {
+		return fmt.Errorf("parse devcontainer overlay: %w", err)
+	}
+	for id, options := range overlay.Features {
+		if rawConfig.Features == nil {
+			rawConfig.Features = make(map[string]any)
+		}
+		if strings.HasPrefix(id, "./") || strings.HasPrefix(id, "../") {
+			relative, err := filepath.Rel(
+				filepath.Dir(rawConfig.Origin),
+				filepath.Join(filepath.Dir(overlay.Origin), filepath.FromSlash(id)),
+			)
+			if err != nil {
+				return fmt.Errorf("resolve overlay feature %q: %w", id, err)
+			}
+			id = "./" + filepath.ToSlash(relative)
+		}
+		rawConfig.Features[id] = options
+	}
+	return nil
 }
 
 // substitute resolves devcontainer.json variables and applies CLI overrides,
